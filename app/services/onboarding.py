@@ -101,7 +101,9 @@ def _clear_previous_data(org_id: str, db: Session) -> None:
         db.query(ProfileEntry).filter_by(profile_id=profile.id).delete()
         db.query(OrgProfile).filter_by(id=profile.id).delete()
     db.query(EmbeddingRecord).delete()
-    db.query(DarkWebItem).delete()
+    # Only delete darkweb items not referenced by any remaining alerts
+    referenced = db.query(Alert.darkweb_item_id).subquery()
+    db.query(DarkWebItem).filter(DarkWebItem.id.notin_(referenced)).delete(synchronize_session="fetch")
     db.commit()
     logger.info(f"Cleared previous data for org {org_id}")
 
