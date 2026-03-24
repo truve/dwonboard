@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./onboard.db"
-    OPENAI_API_KEY: str = ""
+    OPENAI_KEY: str = ""
     RF_TOKEN: str = ""
     RF_API_BASE: str = "https://api.recordedfuture.com/v2"
     OPENAI_CHAT_MODEL: str = "gpt-4o"
