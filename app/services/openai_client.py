@@ -39,7 +39,13 @@ async def chat_completion(
                 kwargs["response_format"] = response_format
 
             response = await client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content or ""
+            choice = response.choices[0]
+            if choice.finish_reason == "length":
+                raise ValueError(
+                    f"Response truncated (hit max_tokens={max_tokens}). "
+                    "Increase max_tokens or simplify the prompt."
+                )
+            return choice.message.content or ""
         except Exception as e:
             logger.warning(f"OpenAI call attempt {attempt + 1} failed: {e}")
             if attempt == 2:

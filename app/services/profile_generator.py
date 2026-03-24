@@ -92,7 +92,8 @@ Cover these categories thoroughly:
 8. geography: Headquarters, regional offices, operating countries
 
 If you are uncertain about a fact, include it but note the uncertainty in the citation snippet. \
-Prefer well-known, verifiable facts over speculation. Include at least 3 facts per category."""
+Prefer well-known, verifiable facts over speculation. Include 3-5 facts per category. \
+Keep citation_snippet under 50 words. Keep values concise."""
 
 SUMMARY_SYSTEM_PROMPT = """You are a concise business analyst. Given a structured organization \
 profile in JSON, write a 3-5 sentence executive summary that captures the most important \
