@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m venv .venv)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(source /Users/truve/dev/claude/onboard/.venv/bin/activate)",
+      "Bash(python -c \"from app.main import app; print\\(''Backend OK''\\)\")",
+      "Bash(python -c \"from app.main import app; print\\(''OK''\\)\")"
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "reference": {
+    "function": [
+      "canonic"
+    ],
+    "type": [
+      "WebReportedVulnerability",
+      "UpdatedVulnerability",
+      "CyberAttack",
+      "NetworkTrafficAnalysis",
+      "SnortRule",
+      "ServiceDisruption",
+      "DDoSTrafficAnalysis",
+      "CardDump",
+      "CyberExploit",
+      "MalwareAnalysis",
+      "WhoisUpdate",
+      "WebsiteScan",
+      "InfrastructureAnalysis",
+      "TTPAnalysis",
+      "CredentialLeak",
+      "DisclosedVulnerability"
+    ],
+    "time_range": "-10d to today",
+    "document": {
+      "published": {
+        "range": "auto"
+      }
+    },
+    "attributes": [
+      {
+        "entity": {
+          "id": [
+            "OYHH7k"
+          ]
+        },
+        "name": [
+          [
+            "Event.document",
+            "Source.media_type"
+          ]
+        ]
+      },
+      {
+        "entity": {
+          "id": [
+            ENTITYID
+          ]
+        }
+      }
+    ],
+    "limit": 300
+  },
+  "debug": {}
+}
