@@ -1,13 +1,37 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { api } from "./api";
 import type { Organization } from "./api";
+import { getToken } from "./auth";
+import Login from "./components/Login";
 import OnboardingWizard from "./components/OnboardingWizard";
 import Dashboard from "./components/Dashboard";
 
 type View = "wizard" | "dashboard";
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("wizard");
   const [org, setOrg] = useState<Organization | null>(null);
+  const checkedRef = useRef(false);
+
+  // Check auth once on load
+  useEffect(() => {
+    if (checkedRef.current) return;
+    checkedRef.current = true;
+
+    const token = getToken();
+    if (token) {
+      // Have a stored token — verify it
+      api.checkAuth()
+        .then(() => setAuthenticated(true))
+        .catch(() => setAuthenticated(false));
+    } else {
+      // No token — check if auth is disabled on the server
+      api.checkAuth()
+        .then(() => setAuthenticated(true))
+        .catch(() => setAuthenticated(false));
+    }
+  }, []);
 
   const handleOnboarded = (organization: Organization) => {
     setOrg(organization);
@@ -18,6 +42,20 @@ export default function App() {
     setOrg(null);
     setView("wizard");
   };
+
+  // Loading state
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  // Login gate
+  if (!authenticated) {
+    return <Login onLogin={() => setAuthenticated(true)} />;
+  }
 
   return (
     <div className="min-h-screen">

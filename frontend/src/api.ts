@@ -1,10 +1,18 @@
+import { getAuthHeaders, clearToken } from "./auth";
+
 const BASE = "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeaders = getAuthHeaders();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { "Content-Type": "application/json", ...authHeaders, ...init?.headers },
   });
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    clearToken();
+    window.location.reload();
+    throw new Error("Not authenticated");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${res.status}: ${body}`);
@@ -102,6 +110,14 @@ export interface RFEntityCandidate {
 
 // API calls
 export const api = {
+  login: (password: string) =>
+    request<{ ok: boolean; token: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  checkAuth: () => request<{ authenticated: boolean }>("/auth/check"),
+
   searchEntities: (query: string) =>
     request<RFEntityCandidate[]>(
       `/organizations/search-entities?query=${encodeURIComponent(query)}`

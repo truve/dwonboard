@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.45
     MAX_CONCURRENT_CLASSIFICATIONS: int = 5
     DARKWEB_LOOKBACK_DAYS: int = 14
+    AUTH_PASSWORD: str = ""
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env")

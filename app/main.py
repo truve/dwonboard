@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import alerts, darkweb, organizations, profiles
+from app.routers import alerts, auth, darkweb, organizations, profiles
 
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
 
@@ -33,6 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
 app.include_router(organizations.router, prefix="/api/v1", tags=["organizations"])
 app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"])
 app.include_router(alerts.router, prefix="/api/v1", tags=["alerts"])
