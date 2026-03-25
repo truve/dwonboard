@@ -68,7 +68,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
   // Entity selection
   const [entityCandidates, setEntityCandidates] = useState<RFEntityCandidate[]>([]);
-  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<"progress" | "intel">("progress");
   const [riskScore, setRiskScore] = useState<number | null>(null);
@@ -165,7 +164,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
       if (candidates.length > 1) {
         // Multiple matches — let user choose
         setEntityCandidates(candidates);
-        setSelectedEntityId(candidates[0].id);
         setStep("select-entity");
       } else {
         // 0 or 1 match — proceed directly
