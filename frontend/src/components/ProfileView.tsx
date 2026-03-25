@@ -212,6 +212,7 @@ function CategoryIcon({ name }: { name: string }) {
 }
 
 function formatCategory(cat: string): string {
+  if (cat === "vips") return "VIPs";
   return cat
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

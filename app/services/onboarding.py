@@ -169,8 +169,10 @@ async def run_onboarding_pipeline(org_id: str) -> None:
             org.logo_url = await _find_logo_url(domains)
             db.commit()
 
-        # Resolve RF entity
-        entity_id = await search_entity(org.name)
+        # Resolve RF entity — use stored ID if user selected one
+        entity_id = org.rf_entity_id
+        if not entity_id:
+            entity_id = await search_entity(org.name)
         if not entity_id:
             raise ValueError(f"No Recorded Future entity found for '{org.name}'")
 

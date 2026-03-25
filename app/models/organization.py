@@ -16,6 +16,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     domain: Mapped[str | None] = mapped_column(String(255))
     industry: Mapped[str | None] = mapped_column(String(100))
+    rf_entity_id: Mapped[str | None] = mapped_column(String(50))
     status: Mapped[str] = mapped_column(String(30), default="pending_confirmation")
     logo_url: Mapped[str | None] = mapped_column(Text)
     ingestion_stats: Mapped[str | None] = mapped_column(Text)

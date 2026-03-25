@@ -16,6 +16,39 @@ from app.services.onboarding import collect_one_day, run_analysis, run_onboardin
 router = APIRouter()
 
 
+@router.get("/organizations/search-entities")
+async def search_entities(
+    query: str = Query(..., min_length=1, description="Organization name to search"),
+) -> list[dict]:
+    """Search Recorded Future for matching company entities."""
+    from app.services.recorded_future import get_rf_client
+
+    client = get_rf_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="RF API not configured")
+
+    try:
+        result = client.search_entity_by_name(query, "Company")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"RF API error: {e}")
+
+    entities = result.get("entities", [])
+    entity_details = result.get("entity_details", {})
+
+    candidates = []
+    for eid in entities[:5]:
+        entity_id = eid if isinstance(eid, str) else eid.get("id", "")
+        detail = entity_details.get(entity_id, {})
+        candidates.append({
+            "id": entity_id,
+            "name": detail.get("name", entity_id),
+            "type": detail.get("type", "Company"),
+            "description": detail.get("description", ""),
+        })
+
+    return candidates
+
+
 @router.post("/organizations", response_model=OrganizationOut, status_code=201)
 def create_organization(
     body: OrganizationCreate,
@@ -25,6 +58,7 @@ def create_organization(
         name=body.name,
         domain=body.domain,
         industry=body.industry,
+        rf_entity_id=body.rf_entity_id,
     )
     db.add(org)
     db.commit()

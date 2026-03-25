@@ -7,6 +7,7 @@ class OrganizationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     domain: str | None = Field(None, max_length=255)
     industry: str | None = Field(None, max_length=100)
+    rf_entity_id: str | None = Field(None, max_length=50)
 
 
 class OrganizationOut(BaseModel):

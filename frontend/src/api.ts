@@ -93,9 +93,21 @@ export interface AlertList {
   alerts: Alert[];
 }
 
+export interface RFEntityCandidate {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+}
+
 // API calls
 export const api = {
-  createOrg: (data: { name: string; domain?: string; industry?: string }) =>
+  searchEntities: (query: string) =>
+    request<RFEntityCandidate[]>(
+      `/organizations/search-entities?query=${encodeURIComponent(query)}`
+    ),
+
+  createOrg: (data: { name: string; domain?: string; industry?: string; rf_entity_id?: string }) =>
     request<Organization>("/organizations", {
       method: "POST",
       body: JSON.stringify(data),

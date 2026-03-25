@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../api";
-import type { Organization, OnboardingStatus, DailyIngestionStats, CollectDayResult } from "../api";
+import type { Organization, OnboardingStatus, DailyIngestionStats, CollectDayResult, RFEntityCandidate } from "../api";
 import IngestionChart from "./IngestionChart";
 import IntelCardView from "./IntelCardView";
 
@@ -58,13 +58,17 @@ const STATUS_ORDER = [
 ];
 
 export default function OnboardingWizard({ onComplete }: Props) {
-  const [step, setStep] = useState<"form" | "processing">("form");
+  const [step, setStep] = useState<"form" | "select-entity" | "processing">("form");
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(false);
   const [org, setOrg] = useState<Organization | null>(null);
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Entity selection
+  const [entityCandidates, setEntityCandidates] = useState<RFEntityCandidate[]>([]);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<"progress" | "intel">("progress");
   const [riskScore, setRiskScore] = useState<number | null>(null);
@@ -156,9 +160,32 @@ export default function OnboardingWizard({ onComplete }: Props) {
     setLoading(true);
     setError(null);
     try {
+      // Search for matching RF entities
+      const candidates = await api.searchEntities(name);
+      if (candidates.length > 1) {
+        // Multiple matches — let user choose
+        setEntityCandidates(candidates);
+        setSelectedEntityId(candidates[0].id);
+        setStep("select-entity");
+      } else {
+        // 0 or 1 match — proceed directly
+        await startOnboarding(candidates[0]?.id ?? undefined);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to search entities");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startOnboarding = async (rfEntityId?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
       const created = await api.createOrg({
         name,
         domain: domain || undefined,
+        rf_entity_id: rfEntityId,
       });
       const confirmed = await api.confirmOrg(created.id);
       setOrg(confirmed);
@@ -232,9 +259,54 @@ export default function OnboardingWizard({ onComplete }: Props) {
             disabled={loading || !name.trim()}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors"
           >
-            {loading ? "Creating..." : "Confirm & Begin Onboarding"}
+            {loading ? "Searching..." : "Confirm & Begin Onboarding"}
           </button>
         </form>
+      </div>
+    );
+  }
+
+  if (step === "select-entity") {
+    return (
+      <div className="max-w-xl mx-auto mt-12">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-white mb-3">
+            Select Organization
+          </h2>
+          <p className="text-gray-400">
+            Multiple matches found for "{name}". Please select the correct entity.
+          </p>
+        </div>
+
+        <div className="bg-[#111827] rounded-xl border border-gray-800 p-6 space-y-3">
+          {entityCandidates.map((candidate) => (
+            <button
+              key={candidate.id}
+              onClick={() => startOnboarding(candidate.id)}
+              disabled={loading}
+              className="w-full text-left p-4 rounded-lg border bg-[#0a0e17] border-gray-800 hover:border-blue-600 hover:bg-blue-900/20 transition-colors disabled:opacity-50"
+            >
+              <p className="text-sm font-medium text-white">{candidate.name}</p>
+              {candidate.description && (
+                <p className="text-xs text-gray-400 mt-1 line-clamp-2">{candidate.description}</p>
+              )}
+              <p className="text-[10px] text-gray-600 mt-1 font-mono">{candidate.id}</p>
+            </button>
+          ))}
+
+          {error && (
+            <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={() => { setStep("form"); setEntityCandidates([]); }}
+            className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors mt-2"
+          >
+            Back
+          </button>
+        </div>
       </div>
     );
   }
