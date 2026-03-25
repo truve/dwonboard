@@ -25,7 +25,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="/rf-ai-logo.png"
+              src="/RFAIlogo.svg"
               alt="Recorded Future AI"
               className="h-8 brightness-0 invert"
             />

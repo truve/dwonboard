@@ -168,6 +168,45 @@ class RecordedFutureClient:
         self.logger.info(f"Querying RF intel card: entity={entity_id}")
         return self._make_query(query)
 
+    def resolve_entity_names(self, entity_ids: list[str]) -> dict[str, dict]:
+        """Look up display names and types for a batch of entity IDs.
+
+        Returns a dict mapping entity_id -> {"name": str, "type": str}.
+        Skips IDs that already have a readable prefix (idn:, ip:, email:, hash:, mitre:).
+        """
+        # Filter out IDs that are already human-readable
+        skip_prefixes = ("idn:", "ip:", "email:", "hash:", "mitre:", "source:", "url:")
+        to_resolve = [eid for eid in entity_ids if not any(eid.startswith(p) for p in skip_prefixes)]
+
+        if not to_resolve:
+            return {}
+
+        resolved: dict[str, dict] = {}
+
+        # RF entity API supports batches — do chunks of 100
+        for i in range(0, len(to_resolve), 100):
+            batch = to_resolve[i:i + 100]
+            try:
+                query = {
+                    "entity": {
+                        "id": batch,
+                        "limit": len(batch),
+                    }
+                }
+                result = self._make_query(query)
+                details = result.get("entity_details", {})
+                for eid in batch:
+                    detail = details.get(eid, {})
+                    if detail.get("name"):
+                        resolved[eid] = {
+                            "name": detail["name"],
+                            "type": detail.get("type", ""),
+                        }
+            except Exception as e:
+                self.logger.warning(f"Failed to resolve entity names batch: {e}")
+
+        return resolved
+
     def search_entity_by_name(self, name: str, entity_type: str = "Company") -> dict:
         """Search for entities by freetext name."""
         query = {

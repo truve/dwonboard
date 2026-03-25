@@ -87,6 +87,11 @@ Severity levels:
 If the post is clearly irrelevant (similarity was a false positive), set relevant=false. \
 Otherwise set relevant=true and provide your full classification.
 
+IMPORTANT: When the threat involves a specific domain, URL, IP address, or phishing site, \
+you MUST include the exact domain/URL/IP in both the title and description fields. \
+For example: "Phishing site targeting swedbank.lv-ssl.cfd" not just "Phishing site detected". \
+Always surface the specific IOCs (indicators of compromise) so the analyst can take action.
+
 Respond in the provided JSON schema."""
 
 

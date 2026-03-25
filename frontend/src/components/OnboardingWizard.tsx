@@ -167,7 +167,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
         setStep("select-entity");
       } else {
         // 0 or 1 match — proceed directly
-        await startOnboarding(candidates[0]?.id ?? undefined);
+        await startOnboarding(candidates[0]?.id, candidates[0]?.name);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to search entities");
@@ -176,12 +176,12 @@ export default function OnboardingWizard({ onComplete }: Props) {
     }
   };
 
-  const startOnboarding = async (rfEntityId?: string) => {
+  const startOnboarding = async (rfEntityId?: string, entityName?: string) => {
     setLoading(true);
     setError(null);
     try {
       const created = await api.createOrg({
-        name,
+        name: entityName || name,
         domain: domain || undefined,
         rf_entity_id: rfEntityId,
       });
@@ -232,7 +232,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Domains
+              Domains (optional)
             </label>
             <input
               type="text"
@@ -280,7 +280,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {entityCandidates.map((candidate) => (
             <button
               key={candidate.id}
-              onClick={() => startOnboarding(candidate.id)}
+              onClick={() => startOnboarding(candidate.id, candidate.name)}
               disabled={loading}
               className="w-full text-left p-4 rounded-lg border bg-[#0a0e17] border-gray-800 hover:border-blue-600 hover:bg-blue-900/20 transition-colors disabled:opacity-50"
             >

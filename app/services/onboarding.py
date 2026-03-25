@@ -187,6 +187,26 @@ async def run_onboarding_pipeline(org_id: str) -> None:
         if client:
             try:
                 intel_data = client.get_intel_card(entity_id)
+
+                # Resolve entity names from entity_lists
+                item = (intel_data.get("result", {}).get("items") or [None])[0]
+                if item:
+                    entity_lists = item.get("stats", {}).get("entity_lists", {})
+                    all_ids: list[str] = []
+                    for etype, elist in entity_lists.items():
+                        if isinstance(elist, list):
+                            # Top 10 per type
+                            sorted_list = sorted(elist, key=lambda e: e.get("count", 0), reverse=True)
+                            for e in sorted_list[:10]:
+                                if e.get("id"):
+                                    all_ids.append(e["id"])
+
+                    if all_ids:
+                        names = client.resolve_entity_names(all_ids)
+                        # Store the name map alongside the intel card data
+                        intel_data["_entity_names"] = names
+                        logger.info(f"Resolved {len(names)} entity names")
+
                 org.intel_card = json.dumps(intel_data, default=str)
                 db.commit()
                 logger.info(f"Fetched intel card for {org.name}")

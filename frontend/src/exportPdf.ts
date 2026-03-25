@@ -58,7 +58,7 @@ export async function exportReport(data: ReportData) {
 
   // Load logos in parallel
   const [rfLogoDataUrl, orgLogoDataUrl] = await Promise.all([
-    loadImageAsDataUrl("/rf-ai-logo.png", true),
+    loadImageAsDataUrl("/RFAIlogo.svg", false),
     org.logo_url ? loadImageAsDataUrl(`/api/v1/organizations/${org.id}/logo`) : Promise.resolve(null),
   ]);
 
@@ -77,8 +77,9 @@ export async function exportReport(data: ReportData) {
   // RF AI logo at top of title page
   if (rfLogoDataUrl) {
     // Original is 1446x243 — render at ~60mm wide
+    // SVG original: 311.56 x 34.21 — keep aspect ratio
     const rfLogoW = 60;
-    const rfLogoH = rfLogoW * (243 / 1446);
+    const rfLogoH = rfLogoW * (34.21 / 311.56);
     doc.addImage(rfLogoDataUrl, "PNG", MARGIN, y, rfLogoW, rfLogoH);
     y += rfLogoH + 10;
   }
@@ -574,6 +575,158 @@ function drawIntelCard(
       y += 5;
     }
     y += 6;
+  }
+
+  // Reference Activity Chart
+  const rawCounts: Record<string, number> = innerStats?.counts ?? outerStats?.counts ?? {};
+  const byMonth: Record<string, number> = {};
+  for (const [date, count] of Object.entries(rawCounts)) {
+    const month = date.slice(0, 7);
+    byMonth[month] = (byMonth[month] ?? 0) + (count as number);
+  }
+  const monthPoints = Object.entries(byMonth)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, count]) => ({ month, count }));
+
+  if (monthPoints.length >= 2) {
+    const CHART_H = 55;
+    const CHART_W = CONTENT_WIDTH - 20;
+    const AXIS_W = 20;
+    checkSpace(CHART_H + 30);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Reference Activity Over Time", MARGIN, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+
+    const chartLeft = MARGIN + AXIS_W;
+    const chartTop = y;
+    const chartBottom = y + CHART_H;
+    const maxC = Math.max(...monthPoints.map((p) => p.count), 1);
+
+    // Y axis
+    doc.setFontSize(6);
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.2);
+    for (const tick of [0, Math.round(maxC / 2), maxC]) {
+      const tickY = chartBottom - (tick / maxC) * CHART_H;
+      doc.setTextColor(120);
+      const label = tick >= 1000 ? `${(tick / 1000).toFixed(1)}k` : String(tick);
+      doc.text(label, chartLeft - 2, tickY + 1, { align: "right" });
+      doc.setDrawColor(230);
+      doc.line(chartLeft, tickY, chartLeft + CHART_W, tickY);
+    }
+
+    // Axes
+    doc.setDrawColor(160);
+    doc.setLineWidth(0.3);
+    doc.line(chartLeft, chartTop, chartLeft, chartBottom);
+    doc.line(chartLeft, chartBottom, chartLeft + CHART_W, chartBottom);
+
+    // Line + area fill
+    const linePoints: [number, number][] = monthPoints.map((p, i) => [
+      chartLeft + (i / (monthPoints.length - 1)) * CHART_W,
+      chartBottom - (p.count / maxC) * CHART_H,
+    ]);
+
+    // Draw the line
+    doc.setDrawColor(59, 130, 246);
+    doc.setLineWidth(0.8);
+    for (let i = 0; i < linePoints.length - 1; i++) {
+      doc.line(linePoints[i][0], linePoints[i][1], linePoints[i + 1][0], linePoints[i + 1][1]);
+    }
+    // Dots
+    doc.setFillColor(59, 130, 246);
+    for (const [px, py] of linePoints) {
+      doc.circle(px, py, 0.8, "F");
+    }
+
+    y = chartBottom + 2;
+    // X labels
+    doc.setFontSize(5);
+    doc.setTextColor(120);
+    const labelStep2 = Math.max(1, Math.ceil(monthPoints.length / 8));
+    for (let i = 0; i < monthPoints.length; i += labelStep2) {
+      const x = chartLeft + (i / (monthPoints.length - 1)) * CHART_W;
+      const [yr, mo] = monthPoints[i].month.split("-");
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      doc.text(`${months[parseInt(mo)-1]} ${yr.slice(2)}`, x, y + 3, { align: "center" });
+    }
+    doc.setTextColor(0);
+    doc.setDrawColor(0);
+    y += 10;
+  }
+
+  // Topics Pie Chart
+  const rawTopics: Record<string, number> = innerStats?.topics ?? outerStats?.topics ?? {};
+  const topicsSorted = Object.entries(rawTopics)
+    .map(([name, count]) => ({ name, count: count as number }))
+    .filter((t) => t.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  if (topicsSorted.length > 0) {
+    checkSpace(75);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Reference Topics", MARGIN, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+
+    const top12 = topicsSorted.slice(0, 12);
+    const otherCount = topicsSorted.slice(12).reduce((s, t) => s + t.count, 0);
+    const slices = otherCount > 0 ? [...top12, { name: "Other", count: otherCount }] : top12;
+    const totalTopics = slices.reduce((s, t) => s + t.count, 0);
+
+    const pieColors: [number, number, number][] = [
+      [59,130,246],[139,92,246],[236,72,153],[249,115,22],[234,179,8],
+      [34,197,94],[6,182,212],[244,63,94],[168,85,247],[20,184,166],
+      [99,102,241],[217,70,239],[132,204,22],
+    ];
+
+    const cx = MARGIN + 25;
+    const cy = y + 25;
+    const r = 20;
+
+    let cumAngle = -Math.PI / 2;
+    for (let i = 0; i < slices.length; i++) {
+      const angle = (slices[i].count / totalTopics) * 2 * Math.PI;
+      const startAngle = cumAngle;
+      cumAngle += angle;
+
+      const color = pieColors[i % pieColors.length];
+      doc.setFillColor(...color);
+
+      // Draw pie slice as triangle fan
+      const steps = Math.max(Math.round((angle / (2 * Math.PI)) * 36), 1);
+      for (let s = 0; s < steps; s++) {
+        const a1 = startAngle + (angle * s) / steps;
+        const a2 = startAngle + (angle * (s + 1)) / steps;
+        const x1 = cx + r * Math.cos(a1);
+        const y1v = cy + r * Math.sin(a1);
+        const x2 = cx + r * Math.cos(a2);
+        const y2v = cy + r * Math.sin(a2);
+        // Triangle: center, point1, point2
+        doc.triangle(cx, cy, x1, y1v, x2, y2v, "F");
+      }
+    }
+
+    // Legend (to the right of pie)
+    const legendX = MARGIN + 55;
+    let legendY = y;
+    doc.setFontSize(7);
+    for (let i = 0; i < slices.length; i++) {
+      const color = pieColors[i % pieColors.length];
+      const pct = ((slices[i].count / totalTopics) * 100).toFixed(1);
+      doc.setFillColor(...color);
+      doc.rect(legendX, legendY - 2, 3, 3, "F");
+      doc.setTextColor(60);
+      doc.text(`${slices[i].name} (${pct}%)`, legendX + 5, legendY);
+      legendY += 4;
+    }
+
+    doc.setTextColor(0);
+    y = Math.max(cy + r + 8, legendY + 4);
   }
 
   // Risk Rules
