@@ -46,6 +46,21 @@ CLASSIFICATION_SCHEMA = {
                     ],
                 },
                 "reasoning": {"type": "string"},
+                "iocs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["domain", "ip", "url"],
+                            },
+                            "value": {"type": "string"},
+                        },
+                        "required": ["type", "value"],
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": [
                 "relevant",
@@ -55,6 +70,7 @@ CLASSIFICATION_SCHEMA = {
                 "relevance",
                 "classification",
                 "reasoning",
+                "iocs",
             ],
             "additionalProperties": False,
         },
@@ -91,6 +107,10 @@ IMPORTANT: When the threat involves a specific domain, URL, IP address, or phish
 you MUST include the exact domain/URL/IP in both the title and description fields. \
 For example: "Phishing site targeting swedbank.lv-ssl.cfd" not just "Phishing site detected". \
 Always surface the specific IOCs (indicators of compromise) so the analyst can take action.
+
+Extract ALL domains, IP addresses, and URLs mentioned in the post into the "iocs" array. \
+Each IOC should have a "type" (domain, ip, or url) and the exact "value". \
+If no IOCs are found, return an empty array.
 
 Respond in the provided JSON schema."""
 
@@ -221,6 +241,24 @@ Most similar profile entries:
 
     matched_ids = [entry_id for entry_id, _ in matches]
 
+    # Enrich IOCs with RF risk scores
+    iocs = result.get("iocs", [])
+    ioc_enrichments = None
+    if iocs:
+        logger.info(f"Enriching {len(iocs)} IOCs: {[i.get('value') for i in iocs]}")
+        from app.services.recorded_future import get_rf_client
+        rf_client = get_rf_client()
+        if rf_client:
+            try:
+                enriched = rf_client.get_ioc_risk_scores(iocs)
+                if enriched:
+                    ioc_enrichments = json.dumps(enriched)
+                    logger.info(f"IOC enrichment complete: {len(enriched)} results")
+            except Exception as e:
+                logger.warning(f"IOC enrichment failed: {e}")
+    else:
+        logger.info("No IOCs extracted from this alert")
+
     alert = Alert(
         org_id=org.id,
         darkweb_item_id=item.id,
@@ -232,6 +270,7 @@ Most similar profile entries:
         matched_profile_entries=json.dumps(matched_ids),
         classification=result["classification"],
         ai_reasoning=result["reasoning"],
+        ioc_enrichments=ioc_enrichments,
     )
     db.add(alert)
     return alert

@@ -41,18 +41,22 @@ async def chat_completion(
             response = await client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             if choice.finish_reason == "length":
-                raise ValueError(
-                    f"Response truncated (hit max_tokens={max_tokens}). "
-                    "Increase max_tokens or simplify the prompt."
+                logger.warning(
+                    f"Response truncated (finish_reason=length, max_tokens={max_tokens}), "
+                    f"retrying with doubled max_tokens"
                 )
+                max_tokens = min(max_tokens * 2, 65536)
+                continue
             return choice.message.content or ""
+        except ValueError:
+            raise  # Don't retry on value errors
         except Exception as e:
             logger.warning(f"OpenAI call attempt {attempt + 1} failed: {e}")
             if attempt == 2:
                 raise
             await asyncio.sleep(2 ** attempt)
 
-    return ""
+    raise ValueError(f"Response still truncated after retries (max_tokens={max_tokens})")
 
 
 async def create_embeddings(

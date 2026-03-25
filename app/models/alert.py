@@ -23,5 +23,6 @@ class Alert(Base):
     matched_profile_entries: Mapped[str | None] = mapped_column(Text)
     classification: Mapped[str] = mapped_column(String(50))
     ai_reasoning: Mapped[str] = mapped_column(Text)
+    ioc_enrichments: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

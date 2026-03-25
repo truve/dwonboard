@@ -238,6 +238,59 @@ export default function AlertsView({ orgId, initialAlerts }: Props) {
               </DetailItem>
             </div>
 
+            {/* IOC Enrichments */}
+            {selectedAlert.ioc_enrichments && selectedAlert.ioc_enrichments.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Indicators of Compromise
+                </h4>
+                <div className="space-y-2">
+                  {selectedAlert.ioc_enrichments.map((ioc, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2.5 bg-[#0a0e17] rounded-lg border border-gray-800">
+                      {/* Risk score gauge (small) */}
+                      {ioc.risk_score != null ? (
+                        <div className="relative w-10 h-10 flex-shrink-0">
+                          <svg className="w-10 h-10 -rotate-90" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="42" fill="none" stroke="#1f2937" strokeWidth="10" />
+                            <circle
+                              cx="50" cy="50" r="42" fill="none"
+                              stroke={iocRiskColor(ioc.risk_score)}
+                              strokeWidth="10"
+                              strokeDasharray={`${(ioc.risk_score / 100) * 264} 264`}
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                            {ioc.risk_score}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 flex-shrink-0 rounded-full bg-gray-800 flex items-center justify-center">
+                          <span className="text-[10px] text-gray-500">N/A</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">
+                            {ioc.type}
+                          </span>
+                          <span className="text-sm text-white font-mono truncate">{ioc.value}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {ioc.criticality && (
+                            <span className="text-[10px] text-gray-500">{ioc.criticality}</span>
+                          )}
+                          {ioc.rules && (
+                            <span className="text-[10px] text-gray-500">{ioc.rules} rules</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 AI Analysis
@@ -277,6 +330,13 @@ function DetailItem({
       {children}
     </div>
   );
+}
+
+function iocRiskColor(score: number): string {
+  if (score >= 75) return "#ef4444";
+  if (score >= 50) return "#f97316";
+  if (score >= 25) return "#eab308";
+  return "#22c55e";
 }
 
 function RelevanceBadge({ relevance }: { relevance: string }) {

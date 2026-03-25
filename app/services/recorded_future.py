@@ -207,6 +207,82 @@ class RecordedFutureClient:
 
         return resolved
 
+    IOC_DATAGROUPS = {
+        "domain": "InternetDomainName",
+        "ip": "IpAddress",
+        "url": "URL",
+    }
+
+    def get_ioc_risk_scores(self, iocs: list[dict]) -> list[dict]:
+        """Look up RF risk scores for IOCs via Intelligence Cards.
+
+        Datagroups: InternetDomainName, IpAddress, URL.
+
+        Args:
+            iocs: List of {"type": "domain"|"ip"|"url", "value": "..."}
+
+        Returns:
+            List of {"type", "value", "risk_score", "rules", "criticality"} enriched IOCs.
+        """
+        if not iocs:
+            return []
+
+        enriched: list[dict] = []
+        # Deduplicate by value to avoid redundant lookups
+        seen: set[str] = set()
+
+        for ioc in iocs:
+            ioc_type = ioc.get("type", "")
+            value = ioc.get("value", "").strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+
+            datagroup = self.IOC_DATAGROUPS.get(ioc_type)
+            if not datagroup:
+                continue
+
+            # Build entity ID
+            if ioc_type == "domain":
+                eid = f"idn:{value}"
+            elif ioc_type == "ip":
+                eid = f"ip:{value}"
+            else:
+                eid = f"url:{value}"
+
+            try:
+                result = self.get_intel_card(eid, datagroup=datagroup)
+                item = (result.get("result", {}).get("items") or [None])[0]
+                if item:
+                    metrics = item.get("stats", {}).get("metrics", {})
+                    risk_score = metrics.get("riskScore")
+                    rules_count = metrics.get("rules", 0)
+                    max_rules = metrics.get("maxRules", 0)
+                    inner_stats = item.get("stats", {}).get("stats", {})
+                    criticality = inner_stats.get("criticalityLabel", "")
+
+                    enriched.append({
+                        "type": ioc_type,
+                        "value": value,
+                        "risk_score": risk_score,
+                        "rules": f"{rules_count}/{max_rules}" if max_rules else None,
+                        "criticality": criticality or None,
+                    })
+                    self.logger.info(f"IOC {eid}: risk_score={risk_score}")
+                else:
+                    enriched.append({
+                        "type": ioc_type, "value": value,
+                        "risk_score": None, "rules": None, "criticality": None,
+                    })
+            except Exception as e:
+                self.logger.warning(f"Failed to get risk for {eid}: {e}")
+                enriched.append({
+                    "type": ioc_type, "value": value,
+                    "risk_score": None, "rules": None, "criticality": None,
+                })
+
+        return enriched
+
     def search_entity_by_name(self, name: str, entity_type: str = "Company") -> dict:
         """Search for entities by freetext name."""
         query = {

@@ -79,6 +79,14 @@ export interface Profile {
   entries: ProfileEntry[];
 }
 
+export interface IocEnrichment {
+  type: string;
+  value: string;
+  risk_score: number | null;
+  rules: string | null;
+  criticality: string | null;
+}
+
 export interface Alert {
   id: string;
   org_id: string;
@@ -94,6 +102,7 @@ export interface Alert {
   created_at: string;
   detected_at: string | null;
   matched_profile_entries: string[] | null;
+  ioc_enrichments: IocEnrichment[] | null;
 }
 
 export interface AlertList {
