@@ -20,6 +20,8 @@ class Organization(Base):
     logo_url: Mapped[str | None] = mapped_column(Text)
     ingestion_stats: Mapped[str | None] = mapped_column(Text)
     cyber_risk_summary: Mapped[str | None] = mapped_column(Text)
+    analysis_progress: Mapped[str | None] = mapped_column(Text)
+    intel_card: Mapped[str | None] = mapped_column(Text)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -139,6 +139,35 @@ class RecordedFutureClient:
         )
         return self._make_query(query)
 
+    def get_intel_card(self, entity_id: str, datagroup: str = "Company") -> dict:
+        """Fetch the Intelligence Card for an entity.
+
+        Returns risk rules, risk score, and detailed entity intelligence.
+        """
+        query = {
+            "from": {
+                "datagroup": datagroup,
+                "function": "default",
+            },
+            "where": {
+                "direct": {
+                    "entity": {
+                        "id": entity_id,
+                    }
+                }
+            },
+            "sort": [
+                {
+                    "field": ["stats.weight"],
+                    "order": "desc",
+                }
+            ],
+            "limit": 1,
+        }
+
+        self.logger.info(f"Querying RF intel card: entity={entity_id}")
+        return self._make_query(query)
+
     def search_entity_by_name(self, name: str, entity_type: str = "Company") -> dict:
         """Search for entities by freetext name."""
         query = {

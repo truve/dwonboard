@@ -180,6 +180,17 @@ async def run_onboarding_pipeline(org_id: str) -> None:
 
         logger.info(f"RF entity IDs for {org.name}: {entity_ids}")
 
+        # Fetch Intelligence Card
+        client = get_rf_client()
+        if client:
+            try:
+                intel_data = client.get_intel_card(entity_id)
+                org.intel_card = json.dumps(intel_data, default=str)
+                db.commit()
+                logger.info(f"Fetched intel card for {org.name}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch intel card: {e}")
+
         # Store entity IDs and initialize stats for the collection phase
         org.ingestion_stats = json.dumps({
             "_entity_ids": entity_ids,
@@ -344,14 +355,34 @@ async def run_analysis(org_id: str) -> None:
             return
 
         org.status = "analyzing"
+        org.analysis_progress = "Computing embeddings for collected references..."
         db.commit()
 
-        await embed_darkweb_items(db)
-        alerts = await generate_alerts_for_org(org_id, db)
+        embedded = await embed_darkweb_items(db)
+
+        total_items = db.query(DarkWebItem).count()
+        org.analysis_progress = f"Embedded {embedded} references. Matching against profile..."
+        db.commit()
+
+        org.analysis_progress = f"Running AI threat classification on {total_items} references..."
+        db.commit()
+
+        async def on_alert(alert: Alert, done: int, total: int) -> None:
+            org.analysis_progress = (
+                f"Classified {done}/{total} candidates — "
+                f"latest: \"{alert.title}\""
+            )
+            db.commit()
+
+        alerts = await generate_alerts_for_org(org_id, db, on_alert=on_alert)
+
+        org.analysis_progress = f"Found {len(alerts)} threats. Generating risk assessment..."
+        db.commit()
 
         risk_summary = await generate_cyber_risk_summary(org_id, db)
         org.cyber_risk_summary = risk_summary
 
+        org.analysis_progress = None
         org.status = "onboarded"
         org.updated_at = datetime.now(timezone.utc)
         db.commit()

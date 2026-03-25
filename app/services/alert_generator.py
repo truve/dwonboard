@@ -90,7 +90,14 @@ Otherwise set relevant=true and provide your full classification.
 Respond in the provided JSON schema."""
 
 
-async def generate_alerts_for_org(org_id: str, db: Session) -> list[Alert]:
+from collections.abc import Callable, Awaitable
+
+OnAlertCallback = Callable[[Alert, int, int], Awaitable[None]] | None
+
+
+async def generate_alerts_for_org(
+    org_id: str, db: Session, on_alert: OnAlertCallback = None
+) -> list[Alert]:
     org = db.query(Organization).filter_by(id=org_id).first()
     if not org:
         raise ValueError(f"Organization {org_id} not found")
@@ -133,27 +140,22 @@ async def generate_alerts_for_org(org_id: str, db: Session) -> list[Alert]:
 
     logger.info(f"{len(candidates)} items passed vector similarity threshold")
 
-    # Classify candidates with LLM (concurrently with semaphore)
-    semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_CLASSIFICATIONS)
+    total_candidates = len(candidates)
     alerts: list[Alert] = []
 
-    async def classify_one(
-        item: DarkWebItem, matches: list[tuple[str, float]]
-    ) -> Alert | None:
-        async with semaphore:
-            return await _classify_item(item, org, profile, entries, matches, entry_map, db)
-
-    tasks = [classify_one(item, matches) for item, matches in candidates]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error(f"Classification failed: {result}")
-        elif result is not None:
-            alerts.append(result)
+    # Process one at a time so we can commit + report progress incrementally
+    for i, (item, matches) in enumerate(candidates):
+        try:
+            alert = await _classify_item(item, org, profile, entries, matches, entry_map, db)
+            if alert is not None:
+                alerts.append(alert)
+                db.commit()
+                if on_alert:
+                    await on_alert(alert, i + 1, total_candidates)
+        except Exception as e:
+            logger.error(f"Classification failed: {e}")
 
     alerts.sort(key=lambda a: a.relevance_score, reverse=True)
-    db.commit()
     logger.info(f"Generated {len(alerts)} alerts for {org.name}")
     return alerts
 

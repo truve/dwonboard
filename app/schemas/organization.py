@@ -49,4 +49,6 @@ class OnboardingStatus(BaseModel):
     logo_url: str | None = None
     ingestion_stats: list[DailyIngestionStats] | None = None
     cyber_risk_summary: str | None = None
+    analysis_progress: str | None = None
+    intel_card_ready: bool = False
     recent_items: list[RecentItem] | None = None

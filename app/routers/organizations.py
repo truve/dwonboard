@@ -103,6 +103,37 @@ async def analyze(
     return {"status": "analyzing"}
 
 
+@router.get("/organizations/{org_id}/logo")
+async def get_logo(org_id: str, db: Session = Depends(get_db)):
+    """Proxy the org logo to avoid CORS issues in the frontend."""
+    import httpx
+    from fastapi.responses import Response
+
+    org = db.query(Organization).filter_by(id=org_id).first()
+    if not org or not org.logo_url:
+        raise HTTPException(status_code=404, detail="Logo not available")
+
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        resp = await client.get(org.logo_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Logo fetch failed")
+        content_type = resp.headers.get("content-type", "image/png")
+        return Response(content=resp.content, media_type=content_type)
+
+
+@router.get("/organizations/{org_id}/intel-card")
+def get_intel_card(
+    org_id: str, db: Session = Depends(get_db)
+) -> dict:
+    """Get the Recorded Future Intelligence Card data."""
+    org = db.query(Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not org.intel_card:
+        raise HTTPException(status_code=404, detail="Intel card not available yet")
+    return json.loads(org.intel_card)
+
+
 @router.get("/organizations/{org_id}/status", response_model=OnboardingStatus)
 def get_onboarding_status(
     org_id: str, db: Session = Depends(get_db)
@@ -140,5 +171,7 @@ def get_onboarding_status(
         logo_url=org.logo_url,
         ingestion_stats=ingestion_stats,
         cyber_risk_summary=org.cyber_risk_summary,
-        recent_items=None,  # No longer used — samples come from collect-day response
+        analysis_progress=org.analysis_progress,
+        intel_card_ready=org.intel_card is not None,
+        recent_items=None,
     )

@@ -5,50 +5,47 @@ const MARGIN = 20;
 const PAGE_WIDTH = 210;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 interface ReportData {
   org: Organization;
   profile: Profile;
   alerts: AlertList;
   ingestionStats: DailyIngestionStats[] | null;
   cyberRiskSummary: string | null;
+  intelCard: any | null;
 }
 
 async function loadImageAsDataUrl(url: string, invert = false): Promise<string | null> {
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const blob = await resp.blob();
+    // Use Image element with crossOrigin to handle CORS (works for Clearbit, Google favicons)
     const dataUrl = await new Promise<string | null>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-    if (!dataUrl || !invert) return dataUrl;
-
-    // Invert colors via canvas (white logo → dark logo for PDF)
-    return new Promise((resolve) => {
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.onload = () => {
         const canvas = document.createElement("canvas");
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          d[i] = 255 - d[i];       // R
-          d[i + 1] = 255 - d[i + 1]; // G
-          d[i + 2] = 255 - d[i + 2]; // B
-          // alpha unchanged
+
+        if (invert) {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imageData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            d[i] = 255 - d[i];
+            d[i + 1] = 255 - d[i + 1];
+            d[i + 2] = 255 - d[i + 2];
+          }
+          ctx.putImageData(imageData, 0, 0);
         }
-        ctx.putImageData(imageData, 0, 0);
+
         resolve(canvas.toDataURL("image/png"));
       };
-      img.onerror = () => resolve(dataUrl); // fall back to original
-      img.src = dataUrl;
+      img.onerror = () => resolve(null);
+      img.src = url;
     });
+    return dataUrl;
   } catch {
     return null;
   }
@@ -62,7 +59,7 @@ export async function exportReport(data: ReportData) {
   // Load logos in parallel
   const [rfLogoDataUrl, orgLogoDataUrl] = await Promise.all([
     loadImageAsDataUrl("/rf-ai-logo.png", true),
-    org.logo_url ? loadImageAsDataUrl(org.logo_url) : Promise.resolve(null),
+    org.logo_url ? loadImageAsDataUrl(`/api/v1/organizations/${org.id}/logo`) : Promise.resolve(null),
   ]);
 
   const addPage = () => {
@@ -88,28 +85,39 @@ export async function exportReport(data: ReportData) {
 
   y = Math.max(y, 50);
 
+  // Row: org logo (left) | title + name (center-left) | risk gauge (right)
+  const rowTop = y;
+  const hasLogo = !!orgLogoDataUrl;
+  const textX = hasLogo ? MARGIN + 32 : MARGIN;
+
   // Organization logo
   if (orgLogoDataUrl) {
     try {
-      doc.addImage(orgLogoDataUrl, "PNG", MARGIN, y, 20, 20);
-      y += 28;
-    } catch {
-      // logo format not supported by jsPDF — skip
-    }
+      doc.addImage(orgLogoDataUrl, "PNG", MARGIN, rowTop, 25, 25);
+    } catch { /* skip if format unsupported */ }
   }
 
-  doc.setFontSize(24);
+  // Risk score gauge on the right
+  const intelItem = data.intelCard?.result?.items?.[0] ?? data.intelCard?.items?.[0];
+  const titleRiskScore = intelItem?.stats?.metrics?.riskScore;
+  if (titleRiskScore != null) {
+    drawRiskScoreGauge(doc, titleRiskScore, PAGE_WIDTH - MARGIN - 10, rowTop + 12, 10);
+  }
+
+  // Title text
+  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.text("Dark Web Monitoring Report", MARGIN, y);
-  y += 12;
-  doc.setFontSize(18);
+  doc.text("Dark Web Monitoring Report", textX, rowTop + 10);
+  doc.setFontSize(16);
   doc.setFont("helvetica", "normal");
-  doc.text(org.name, MARGIN, y);
-  y += 8;
+  doc.text(org.name, textX, rowTop + 20);
+
+  y = rowTop + 30;
+
   if (org.domain) {
     doc.setFontSize(11);
     doc.setTextColor(100);
-    doc.text(org.domain, MARGIN, y);
+    doc.text(org.domain, textX, y);
     y += 6;
   }
   doc.setFontSize(10);
@@ -167,6 +175,11 @@ export async function exportReport(data: ReportData) {
       }
     }
     y += 6;
+  }
+
+  // --- Intelligence Card ---
+  if (data.intelCard) {
+    y = drawIntelCard(doc, data.intelCard, y, checkSpace, addPage);
   }
 
   // --- Organization Profile ---
@@ -437,4 +450,254 @@ function wrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: n
     y += fontSize * 0.45;
   }
   return y;
+}
+
+function drawRiskScoreGauge(doc: jsPDF, score: number, cx: number, cy: number, r: number) {
+  // Background circle
+  doc.setDrawColor(200);
+  doc.setLineWidth(2);
+  doc.circle(cx, cy, r, "S");
+
+  // Score arc — draw as a thick colored arc
+  const color = riskScoreColorRGB(score);
+  doc.setDrawColor(...color);
+  doc.setLineWidth(2.5);
+  const arcEnd = (score / 100) * 360;
+  // Approximate arc with line segments
+  const steps = Math.max(Math.round(arcEnd / 5), 1);
+  for (let i = 0; i < steps; i++) {
+    const a1 = (-90 + (arcEnd * i) / steps) * (Math.PI / 180);
+    const a2 = (-90 + (arcEnd * (i + 1)) / steps) * (Math.PI / 180);
+    doc.line(
+      cx + r * Math.cos(a1), cy + r * Math.sin(a1),
+      cx + r * Math.cos(a2), cy + r * Math.sin(a2)
+    );
+  }
+
+  // Score text
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.3);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...color);
+  doc.text(String(score), cx, cy + 2, { align: "center" });
+  doc.setTextColor(0);
+  doc.setFont("helvetica", "normal");
+}
+
+function riskScoreColorRGB(score: number): [number, number, number] {
+  if (score >= 75) return [220, 50, 50];
+  if (score >= 50) return [230, 120, 30];
+  if (score >= 25) return [200, 170, 30];
+  return [34, 197, 94];
+}
+
+function cleanEvidence(str: string): string {
+  return str.replace(/<e[^>]*>/g, "").replace(/<\/e>/g, "");
+}
+
+function drawIntelCard(
+  doc: jsPDF, intelCard: any, _startY: number,
+  checkSpace: (n: number) => void,
+  addPage: () => void
+): number {
+  const item = intelCard?.result?.items?.[0] ?? intelCard?.items?.[0] ?? intelCard;
+  const outerStats = item?.stats ?? {};
+  const metrics = outerStats?.metrics ?? {};
+  const innerStats = outerStats?.stats ?? {};
+  const evidenceDetails: any[] = innerStats?.evidenceDetails ?? outerStats?.evidenceDetails ?? [];
+  const riskScore = metrics.riskScore;
+  const riskSummary = innerStats?.riskSummary ?? outerStats?.riskSummary ?? "";
+
+  addPage();
+  let y = MARGIN;
+  y = sectionHeading(doc, "Recorded Future Intelligence Card", y);
+
+  // Risk score
+  if (riskScore != null) {
+    checkSpace(25);
+    const color = riskScoreColorRGB(riskScore);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...color);
+    doc.text(`Risk Score: ${riskScore}/100`, MARGIN, y);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    y += 6;
+    if (riskSummary) {
+      doc.setFontSize(9);
+      doc.text(riskSummary, MARGIN, y);
+      y += 6;
+    }
+    y += 4;
+  }
+
+  // Key metrics
+  const keyMetrics = [
+    ["Dark Web Hits", metrics.darkWebHits],
+    ["Underground Forum Hits", metrics.undergroundForumHits],
+    ["Paste Hits", metrics.pasteHits],
+    ["Cyber Attack Hits", metrics.cyberAttackHits],
+    ["Social Media Hits", metrics.socialMediaHits],
+    ["Total Hits", metrics.totalHits],
+    ["7 Day Hits", metrics.sevenDaysHits],
+    ["60 Day Hits", metrics.sixtyDaysHits],
+    ["Risk Rules", `${metrics.rules} / ${metrics.maxRules}`],
+  ].filter(([, v]) => v != null && v !== undefined);
+
+  if (keyMetrics.length > 0) {
+    checkSpace(20);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Key Metrics", MARGIN, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+
+    // Two-column layout
+    const colWidth = CONTENT_WIDTH / 2;
+    for (let i = 0; i < keyMetrics.length; i += 2) {
+      checkSpace(6);
+      const [label1, val1] = keyMetrics[i];
+      doc.text(`${label1}: `, MARGIN, y);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(typeof val1 === "number" ? val1.toLocaleString() : val1), MARGIN + 45, y);
+      doc.setFont("helvetica", "normal");
+
+      if (i + 1 < keyMetrics.length) {
+        const [label2, val2] = keyMetrics[i + 1];
+        doc.text(`${label2}: `, MARGIN + colWidth, y);
+        doc.setFont("helvetica", "bold");
+        doc.text(String(typeof val2 === "number" ? val2.toLocaleString() : val2), MARGIN + colWidth + 45, y);
+        doc.setFont("helvetica", "normal");
+      }
+      y += 5;
+    }
+    y += 6;
+  }
+
+  // Risk Rules
+  if (evidenceDetails.length > 0) {
+    checkSpace(15);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Triggered Risk Rules (${evidenceDetails.length})`, MARGIN, y);
+    y += 7;
+
+    // Sort by criticality descending, then sightings descending
+    const sortedRules = [...evidenceDetails].sort(
+      (a: any, b: any) => (b.Criticality ?? 0) - (a.Criticality ?? 0)
+        || (b.SightingsCount ?? 0) - (a.SightingsCount ?? 0)
+    );
+
+    for (const rule of sortedRules) {
+      checkSpace(18);
+      const critLabel = rule.CriticalityLabel ?? "Info";
+      const ruleName = rule.Rule ?? rule.Name ?? "";
+      const evidence = cleanEvidence(rule.EvidenceString ?? "");
+      const sightings = rule.SightingsCount ?? 0;
+      const timestamp = rule.Timestamp;
+
+      // Criticality badge
+      const critColor = critColorRGB(rule.Criticality ?? 0);
+      doc.setFillColor(...critColor);
+      const badgeWidth = doc.getTextWidth(critLabel) + 4;
+      doc.roundedRect(MARGIN, y - 3.2, badgeWidth + 2, 4.5, 1, 1, "F");
+      doc.setFontSize(7);
+      doc.setTextColor(255);
+      doc.setFont("helvetica", "bold");
+      doc.text(critLabel.toUpperCase(), MARGIN + 1.5, y);
+      doc.setTextColor(0);
+
+      // Rule name
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text(ruleName, MARGIN + badgeWidth + 5, y);
+      doc.setFont("helvetica", "normal");
+      y += 4.5;
+
+      // Meta line
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      const metaParts: string[] = [];
+      if (sightings > 0) metaParts.push(`${sightings.toLocaleString()} sightings`);
+      if (timestamp) {
+        try { metaParts.push(new Date(timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })); } catch { /* */ }
+      }
+      if (metaParts.length > 0) {
+        doc.text(metaParts.join("  |  "), MARGIN + 2, y);
+        y += 3.5;
+      }
+
+      // Evidence text
+      if (evidence) {
+        doc.setFontSize(8);
+        doc.setTextColor(80);
+        y = wrappedText(doc, evidence, MARGIN + 2, y, CONTENT_WIDTH - 4, 8);
+        y += 1;
+      }
+
+      doc.setTextColor(0);
+      y += 3;
+    }
+  }
+
+  // Recent sightings
+  const sightingSource = innerStats.recentDarkWeb ? innerStats : outerStats;
+  const sightings = [
+    sightingSource.recentDarkWeb && { label: "Dark Web", ...sightingSource.recentDarkWeb },
+    sightingSource.recentUndergroundForum && { label: "Underground Forum", ...sightingSource.recentUndergroundForum },
+    sightingSource.recentSocialMedia && { label: "Social Media", ...sightingSource.recentSocialMedia },
+    sightingSource.recentCyberAttack && { label: "Cyber Attack", ...sightingSource.recentCyberAttack },
+    sightingSource.recentPaste && { label: "Paste Site", ...sightingSource.recentPaste },
+  ].filter(Boolean) as any[];
+
+  if (sightings.length > 0) {
+    checkSpace(15);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Recent Notable Sightings", MARGIN, y);
+    y += 7;
+
+    for (const s of sightings) {
+      checkSpace(15);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(60, 130, 246);
+      doc.text(s.label, MARGIN, y);
+      doc.setTextColor(100);
+      doc.setFont("helvetica", "normal");
+      const srcName = s.source?.name ?? "";
+      const dateStr = s.published ? new Date(s.published).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+      doc.text(`  ${srcName}  ${dateStr}`, MARGIN + doc.getTextWidth(s.label) + 2, y);
+      y += 4;
+
+      if (s.title) {
+        doc.setFontSize(8);
+        doc.setTextColor(40);
+        doc.setFont("helvetica", "bold");
+        y = wrappedText(doc, s.title, MARGIN + 2, y, CONTENT_WIDTH - 4, 8);
+        doc.setFont("helvetica", "normal");
+        y += 1;
+      }
+      if (s.fragment) {
+        doc.setFontSize(7);
+        doc.setTextColor(80);
+        y = wrappedText(doc, s.fragment, MARGIN + 2, y, CONTENT_WIDTH - 4, 7);
+        y += 1;
+      }
+      doc.setTextColor(0);
+      y += 3;
+    }
+  }
+
+  return y;
+}
+
+function critColorRGB(c: number): [number, number, number] {
+  if (c >= 4) return [220, 50, 50];
+  if (c >= 3) return [230, 120, 30];
+  if (c >= 2) return [200, 170, 30];
+  if (c >= 1) return [60, 120, 220];
+  return [120, 120, 120];
 }

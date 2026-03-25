@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../api";
 import type { Organization, OnboardingStatus, DailyIngestionStats, CollectDayResult } from "../api";
 import IngestionChart from "./IngestionChart";
+import IntelCardView from "./IntelCardView";
 
 const LOOKBACK_DAYS = 14;
 
@@ -65,6 +66,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [activeTab, setActiveTab] = useState<"progress" | "intel">("progress");
+  const [riskScore, setRiskScore] = useState<number | null>(null);
+
   // Collection state (frontend-driven)
   const [dailyStats, setDailyStats] = useState<DailyIngestionStats[]>([]);
   const [currentSnippet, setCurrentSnippet] = useState<string | null>(null);
@@ -93,6 +97,15 @@ export default function OnboardingWizard({ onComplete }: Props) {
     pollStatus();
     return () => clearInterval(interval);
   }, [step, org, pollStatus]);
+
+  // Fetch risk score when intel card is ready
+  useEffect(() => {
+    if (!org || !status?.intel_card_ready || riskScore !== null) return;
+    api.getIntelCard(org.id).then((data) => {
+      const score = data?.result?.items?.[0]?.stats?.metrics?.riskScore;
+      if (typeof score === "number") setRiskScore(score);
+    }).catch(() => {});
+  }, [org, status?.intel_card_ready, riskScore]);
 
   // When status transitions to "collecting", start the frontend-driven collection loop
   useEffect(() => {
@@ -227,19 +240,75 @@ export default function OnboardingWizard({ onComplete }: Props) {
   }
 
   // Processing view
+  const intelReady = status?.intel_card_ready ?? false;
+
   return (
-    <div className="max-w-2xl mx-auto mt-12">
-      <div className="text-center mb-8">
+    <div className="max-w-3xl mx-auto mt-12">
+      <div className="flex items-center justify-center gap-6 mb-6">
         {status?.logo_url && (
           <img
             src={status.logo_url}
             alt={org?.name ?? ""}
-            className="w-20 h-20 rounded-xl object-contain bg-white p-2 mx-auto mb-4"
+            className="w-20 h-20 rounded-xl object-contain bg-white p-2"
           />
         )}
-        <h2 className="text-3xl font-bold text-white mb-2">{org?.name}</h2>
-        <p className="text-gray-400">Onboarding in progress</p>
+        <div className="text-left">
+          <h2 className="text-3xl font-bold text-white mb-1">{org?.name}</h2>
+          <p className="text-gray-400">Onboarding in progress</p>
+        </div>
+        {riskScore !== null && (
+          <div className="relative w-16 h-16 flex-shrink-0">
+            <svg className="w-16 h-16 -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#1f2937" strokeWidth="8" />
+              <circle
+                cx="50" cy="50" r="42" fill="none"
+                stroke={riskScoreColor(riskScore)}
+                strokeWidth="8"
+                strokeDasharray={`${(riskScore / 100) * 264} 264`}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-white">
+              {riskScore}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-800 mb-6">
+        <nav className="flex gap-1 justify-center">
+          <button
+            onClick={() => setActiveTab("progress")}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "progress"
+                ? "border-blue-500 text-white"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Onboarding Progress
+          </button>
+          <button
+            onClick={() => intelReady && setActiveTab("intel")}
+            disabled={!intelReady}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "intel"
+                ? "border-blue-500 text-white"
+                : !intelReady
+                  ? "border-transparent text-gray-600 cursor-not-allowed"
+                  : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Intelligence Card
+            {!intelReady && <span className="ml-1 text-[10px] text-gray-600">(loading)</span>}
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === "intel" && org && intelReady ? (
+        <IntelCardView orgId={org.id} />
+      ) : (
+      <div>
 
       {/* Progress steps */}
       <div className="bg-[#111827] rounded-xl border border-gray-800 p-8">
@@ -314,6 +383,19 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       "{currentSnippet}"
                     </p>
                   )}
+                  {isActive && key === "analyzing" && status?.analysis_progress && (
+                    <p
+                      className="text-xs text-blue-400 mt-2 animate-fadeIn"
+                      key={status.analysis_progress}
+                    >
+                      {status.analysis_progress}
+                    </p>
+                  )}
+                  {isActive && key === "analyzing" && status?.alerts_count != null && status.alerts_count > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {status.alerts_count} alerts identified so far
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -336,6 +418,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
           <IngestionChart stats={dailyStats} />
         </div>
       )}
+      </div>
+      )}
     </div>
   );
 }
@@ -351,6 +435,13 @@ const PROFILE_STEPS = [
   "Reviewing regulatory environment and competitors...",
   "Verifying findings and gathering citations...",
 ];
+
+function riskScoreColor(score: number): string {
+  if (score >= 75) return "#ef4444";
+  if (score >= 50) return "#f97316";
+  if (score >= 25) return "#eab308";
+  return "#22c55e";
+}
 
 function ProfilingTicker() {
   const [index, setIndex] = useState(0);

@@ -49,6 +49,8 @@ export interface OnboardingStatus {
   logo_url: string | null;
   ingestion_stats: DailyIngestionStats[] | null;
   cyber_risk_summary: string | null;
+  analysis_progress: string | null;
+  intel_card_ready: boolean;
   recent_items: RecentItem[] | null;
 }
 
@@ -111,6 +113,10 @@ export const api = {
 
   getProfile: (orgId: string) =>
     request<Profile>(`/organizations/${orgId}/profile`),
+
+  getIntelCard: (orgId: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    request<any>(`/organizations/${orgId}/intel-card`),
 
   getAlerts: (orgId: string, params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";

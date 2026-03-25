@@ -5,12 +5,13 @@ import { exportReport } from "../exportPdf";
 import ProfileView from "./ProfileView";
 import AlertsView from "./AlertsView";
 import IngestionChart from "./IngestionChart";
+import IntelCardView from "./IntelCardView";
 
 interface Props {
   org: Organization;
 }
 
-type Tab = "overview" | "profile" | "alerts";
+type Tab = "overview" | "profile" | "alerts" | "intel";
 
 export default function Dashboard({ org }: Props) {
   const [tab, setTab] = useState<Tab>("overview");
@@ -18,6 +19,9 @@ export default function Dashboard({ org }: Props) {
   const [alerts, setAlerts] = useState<AlertList | null>(null);
   const [ingestionStats, setIngestionStats] = useState<DailyIngestionStats[] | null>(null);
   const [cyberRiskSummary, setCyberRiskSummary] = useState<string | null>(null);
+  const [riskScore, setRiskScore] = useState<number | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [intelCard, setIntelCard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +36,17 @@ export default function Dashboard({ org }: Props) {
         setAlerts(a);
         setIngestionStats(s.ingestion_stats);
         setCyberRiskSummary(s.cyber_risk_summary);
+
+        // Fetch risk score from intel card
+        if (s.intel_card_ready) {
+          try {
+            const intel = await api.getIntelCard(org.id);
+            setIntelCard(intel);
+            const score = intel?.result?.items?.[0]?.stats?.metrics?.riskScore
+              ?? intel?.items?.[0]?.stats?.metrics?.riskScore;
+            if (typeof score === "number") setRiskScore(score);
+          } catch { /* intel card optional */ }
+        }
       } catch (e) {
         console.error("Load error:", e);
       } finally {
@@ -77,6 +92,7 @@ export default function Dashboard({ org }: Props) {
     { key: "overview", label: "Overview" },
     { key: "profile", label: "Organization Profile" },
     { key: "alerts", label: `Alerts (${alerts?.total ?? 0})` },
+    { key: "intel", label: "Intelligence Card" },
   ];
 
   return (
@@ -101,7 +117,7 @@ export default function Dashboard({ org }: Props) {
         <button
           onClick={() => {
             if (profile && alerts) {
-              exportReport({ org, profile, alerts, ingestionStats, cyberRiskSummary });
+              exportReport({ org, profile, alerts, ingestionStats, cyberRiskSummary, intelCard });
             }
           }}
           disabled={!profile || !alerts}
@@ -120,14 +136,34 @@ export default function Dashboard({ org }: Props) {
           {profile && (
             <div className="bg-[#111827] rounded-xl border border-gray-800 p-6">
               <div className="flex items-start gap-5">
-                {org.logo_url && (
-                  <img
-                    src={org.logo_url}
-                    alt={org.name}
-                    className="w-16 h-16 rounded-lg object-contain bg-white p-2 flex-shrink-0"
-                  />
-                )}
-                <div>
+                {/* Logo + Risk Score stacked */}
+                <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                  {org.logo_url && (
+                    <img
+                      src={org.logo_url}
+                      alt={org.name}
+                      className="w-16 h-16 rounded-lg object-contain bg-white p-2"
+                    />
+                  )}
+                  {riskScore !== null && (
+                    <div className="relative w-14 h-14">
+                      <svg className="w-14 h-14 -rotate-90" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="#1f2937" strokeWidth="8" />
+                        <circle
+                          cx="50" cy="50" r="42" fill="none"
+                          stroke={riskScoreColor(riskScore)}
+                          strokeWidth="8"
+                          strokeDasharray={`${(riskScore / 100) * 264} 264`}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white">
+                        {riskScore}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
                   <h3 className="text-lg font-semibold text-white mb-3">
                     Executive Summary
                   </h3>
@@ -278,6 +314,7 @@ export default function Dashboard({ org }: Props) {
       {tab === "alerts" && alerts && (
         <AlertsView orgId={org.id} initialAlerts={alerts} />
       )}
+      {tab === "intel" && <IntelCardView orgId={org.id} />}
     </div>
   );
 }
@@ -305,6 +342,13 @@ function StatCard({
       </p>
     </div>
   );
+}
+
+function riskScoreColor(score: number): string {
+  if (score >= 75) return "#ef4444";
+  if (score >= 50) return "#f97316";
+  if (score >= 25) return "#eab308";
+  return "#22c55e";
 }
 
 export function SeverityBadge({ severity }: { severity: string }) {
