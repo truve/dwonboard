@@ -2,3 +2,83 @@
 
 
 http://app.recordedfuture.ai/
+
+
+
+INFO:app.services.recorded_future:RF query: {"entity": {"type": "Company", "freetext": "Swedbank", "limit": 10}}
+ERROR:rfapi.rawapiclient:Read timeout during query. Retrying. Attempts left: 3
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+    ~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "/usr/local/lib/python3.13/http/client.py", line 336, in begin
+  File "/usr/local/lib/python3.13/http/client.py", line 1450, in getresponse
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+    response.begin()
+  File "/usr/local/lib/python3.13/http/client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/socket.py", line 719, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/local/lib/python3.13/ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/ssl.py", line 1138, in read
+  File "/usr/local/lib/python3.13/site-packages/urllib3/util/util.py", line 39, in reraise
+    return self._sslobj.read(len, buffer)
+    raise value
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+TimeoutError: The read operation timed out
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/requests/adapters.py", line 645, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "/usr/local/lib/python3.13/site-packages/urllib3/util/retry.py", line 490, in increment
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        self, url, f"Read timed out. (read timeout={timeout_value})"
+                                          timeout=self._timeout)
+        **response_kw,
+    ) from err
+    )
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='api.recordedfuture.com', port=443): Read timed out. (read timeout=600)
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+During handling of the above exception, another exception occurred:
+    raise ReadTimeoutError(
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/rfapi/rawapiclient.py", line 113, in query
+    response = self._request_session.post(self._url,
+                                          json=query,
+    ...<3 lines>...
+                                          proxies=self._proxies,
+  File "/usr/local/lib/python3.13/site-packages/requests/sessions.py", line 640, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/requests/sessions.py", line 592, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/usr/local/lib/python3.13/site-packages/requests/sessions.py", line 706, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python3.13/site-packages/requests/adapters.py", line 691, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='api.recordedfuture.com', port=443): Read timed out. (read timeout=600)
+INFO:app.services.recorded_future:RF response keys: ['entities', 'entity_details', 'count', 'next_page_start', 'status']
+INFO:app.services.recorded_future:RF count: {'entities': {'returned': 10, 'total': 787}}

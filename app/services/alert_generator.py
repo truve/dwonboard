@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -11,7 +10,6 @@ from app.models.darkweb_item import DarkWebItem
 from app.models.organization import Organization
 from app.models.profile import OrgProfile, ProfileEntry
 from app.services.openai_client import chat_completion
-from app.services.vector_search import embed_texts, find_similar
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +44,10 @@ CLASSIFICATION_SCHEMA = {
                     ],
                 },
                 "reasoning": {"type": "string"},
+                "relevance_score": {
+                    "type": "number",
+                    "description": "0.0 to 1.0 indicating how relevant this is to the organization",
+                },
                 "iocs": {
                     "type": "array",
                     "items": {
@@ -70,6 +72,7 @@ CLASSIFICATION_SCHEMA = {
                 "relevance",
                 "classification",
                 "reasoning",
+                "relevance_score",
                 "iocs",
             ],
             "additionalProperties": False,
@@ -80,7 +83,6 @@ CLASSIFICATION_SCHEMA = {
 CLASSIFICATION_SYSTEM_PROMPT = """You are a dark web threat intelligence analyst. You are given:
 1. A dark web post/listing
 2. An organization's profile with specific facts
-3. Profile entries that are most similar to this post (by embedding similarity)
 
 Your job: determine if this dark web post represents a threat to this specific organization.
 
@@ -100,8 +102,11 @@ Severity levels:
 - "low": General industry threat, tangential relevance
 - "info": Background intelligence, no immediate threat
 
-If the post is clearly irrelevant (similarity was a false positive), set relevant=false. \
+If the post is clearly irrelevant, set relevant=false.
 Otherwise set relevant=true and provide your full classification.
+
+Set relevance_score to a number between 0.0 and 1.0 indicating how relevant this post is \
+to the specific organization (1.0 = directly about them, 0.0 = completely unrelated).
 
 IMPORTANT: When the threat involves a specific domain, URL, IP address, or phishing site, \
 you MUST include the exact domain/URL/IP in both the title and description fields. \
@@ -132,7 +137,6 @@ async def generate_alerts_for_org(
         raise ValueError(f"No profile found for org {org_id}")
 
     entries = db.query(ProfileEntry).filter_by(profile_id=profile.id).all()
-    entry_map = {e.id: e for e in entries}
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.DARKWEB_LOOKBACK_DAYS)
     darkweb_items = db.query(DarkWebItem).filter(DarkWebItem.posted_at >= cutoff).all()
@@ -141,69 +145,56 @@ async def generate_alerts_for_org(
         logger.info("No dark web items in lookback window")
         return []
 
+    # Build profile summary for the LLM
+    profile_text = _build_profile_text(org, profile, entries)
+
     logger.info(
-        f"Scanning {len(darkweb_items)} dark web items against {org.name}'s profile"
+        f"Classifying {len(darkweb_items)} dark web items against {org.name}'s profile"
     )
 
-    # For each dark web item, find similar profile entries
-    candidates: list[tuple[DarkWebItem, list[tuple[str, float]]]] = []
-    for item in darkweb_items:
-        item_text = f"{item.title or ''}\n\n{item.content}"
-        item_vectors = await embed_texts([item_text])
-        if not item_vectors:
-            continue
-
-        similar = find_similar(
-            db,
-            query_embedding=item_vectors[0],
-            source_type="profile_entry",
-            top_k=5,
-            threshold=settings.SIMILARITY_THRESHOLD,
-        )
-        if similar:
-            candidates.append((item, similar))
-
-    logger.info(f"{len(candidates)} items passed vector similarity threshold")
-
-    total_candidates = len(candidates)
+    total = len(darkweb_items)
     alerts: list[Alert] = []
 
-    # Process one at a time so we can commit + report progress incrementally
-    for i, (item, matches) in enumerate(candidates):
+    for i, item in enumerate(darkweb_items):
         try:
-            alert = await _classify_item(item, org, profile, entries, matches, entry_map, db)
+            alert = await _classify_item(item, org, profile_text, db)
             if alert is not None:
                 alerts.append(alert)
                 db.commit()
                 if on_alert:
-                    await on_alert(alert, i + 1, total_candidates)
+                    await on_alert(alert, i + 1, total)
         except Exception as e:
-            logger.error(f"Classification failed: {e}")
+            logger.error(f"Classification failed for item {item.id}: {e}")
 
     alerts.sort(key=lambda a: a.relevance_score, reverse=True)
     logger.info(f"Generated {len(alerts)} alerts for {org.name}")
     return alerts
 
 
+def _build_profile_text(
+    org: Organization, profile: OrgProfile, entries: list[ProfileEntry]
+) -> str:
+    """Build a concise profile summary for the LLM prompt."""
+    lines = [
+        f"Organization: {org.name}",
+        f"Domain: {org.domain or 'unknown'}",
+        f"Industry: {org.industry or 'unknown'}",
+        "",
+        f"Summary: {profile.summary}",
+        "",
+        "Key facts:",
+    ]
+    for entry in entries:
+        lines.append(f"- [{entry.category}] {entry.key}: {entry.value}")
+    return "\n".join(lines)
+
+
 async def _classify_item(
     item: DarkWebItem,
     org: Organization,
-    profile: OrgProfile,
-    entries: list[ProfileEntry],
-    matches: list[tuple[str, float]],
-    entry_map: dict[str, ProfileEntry],
+    profile_text: str,
     db: Session,
 ) -> Alert | None:
-    matched_entries = []
-    for entry_id, score in matches:
-        entry = entry_map.get(entry_id)
-        if entry:
-            matched_entries.append(
-                f"- [{entry.category}] {entry.key}: {entry.value} (similarity: {score:.2f})"
-            )
-
-    max_score = max(score for _, score in matches)
-
     user_msg = f"""Dark web post:
 Source: {item.source}
 Type: {item.item_type}
@@ -213,14 +204,7 @@ Content: {item.content}
 
 ---
 
-Organization: {org.name}
-Domain: {org.domain or 'unknown'}
-Industry: {org.industry or 'unknown'}
-
-Profile summary: {profile.summary}
-
-Most similar profile entries:
-{chr(10).join(matched_entries)}
+{profile_text}
 """
 
     response_text = await chat_completion(
@@ -238,8 +222,6 @@ Most similar profile entries:
 
     if not result.get("relevant", False):
         return None
-
-    matched_ids = [entry_id for entry_id, _ in matches]
 
     # Enrich IOCs with RF risk scores
     iocs = result.get("iocs", [])
@@ -266,8 +248,8 @@ Most similar profile entries:
         description=result["description"],
         severity=result["severity"],
         relevance=result["relevance"],
-        relevance_score=max_score,
-        matched_profile_entries=json.dumps(matched_ids),
+        relevance_score=result.get("relevance_score", 0.5),
+        matched_profile_entries=None,
         classification=result["classification"],
         ai_reasoning=result["reasoning"],
         ioc_enrichments=ioc_enrichments,

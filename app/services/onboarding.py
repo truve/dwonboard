@@ -14,7 +14,6 @@ from app.models.organization import Organization
 from app.models.profile import OrgProfile, ProfileEntry
 from app.services.alert_generator import generate_alerts_for_org
 from app.services.cyber_risk import generate_cyber_risk_summary
-from app.services.darkweb_ingest import embed_darkweb_items
 from app.services.profile_generator import generate_profile
 from app.services.recorded_future import (
     DailyStats,
@@ -377,15 +376,8 @@ async def run_analysis(org_id: str) -> None:
             return
 
         org.status = "analyzing"
-        org.analysis_progress = "Computing embeddings for collected references..."
-        db.commit()
-
-        embedded = await embed_darkweb_items(db)
 
         total_items = db.query(DarkWebItem).count()
-        org.analysis_progress = f"Embedded {embedded} references. Matching against profile..."
-        db.commit()
-
         org.analysis_progress = f"Running AI threat classification on {total_items} references..."
         db.commit()
 

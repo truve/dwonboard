@@ -43,7 +43,7 @@ DARK_WEB_MEDIA_TYPE_ID = "OYHH7k"
 class RecordedFutureClient:
     """Client for Recorded Future dark web intelligence queries."""
 
-    def __init__(self, api_token: str, timeout: tuple = (30, 600)):
+    def __init__(self, api_token: str, timeout: tuple = (30, 120)):
         self.api_token = api_token
         self.logger = logging.getLogger(__name__)
         self.api = RawApiClient(auth=self.api_token, timeout=timeout)
