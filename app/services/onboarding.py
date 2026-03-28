@@ -93,18 +93,20 @@ async def _find_logo_url(domains: list[str]) -> str | None:
     return None
 
 
-def _clear_previous_data(org_id: str, db: Session) -> None:
-    db.query(Alert).filter_by(org_id=org_id).delete()
-    profile = db.query(OrgProfile).filter_by(org_id=org_id).first()
+def _clear_previous_data(org: Organization, db: Session) -> None:
+    """Clear previous session data for this org. Other orgs/sessions untouched."""
+    old_session = org.session_id
+    db.query(Alert).filter_by(session_id=old_session).delete()
+    profile = db.query(OrgProfile).filter_by(org_id=org.id).first()
     if profile:
         db.query(ProfileEntry).filter_by(profile_id=profile.id).delete()
         db.query(OrgProfile).filter_by(id=profile.id).delete()
-    db.query(EmbeddingRecord).delete()
-    # Only delete darkweb items not referenced by any remaining alerts
-    referenced = db.query(Alert.darkweb_item_id).subquery()
-    db.query(DarkWebItem).filter(DarkWebItem.id.notin_(referenced)).delete(synchronize_session="fetch")
+    db.query(DarkWebItem).filter_by(session_id=old_session).delete()
+    # Generate new session ID for this onboarding run
+    import uuid as _uuid
+    org.session_id = str(_uuid.uuid4())
     db.commit()
-    logger.info(f"Cleared previous data for org {org_id}")
+    logger.info(f"Cleared previous data, new session {org.session_id}")
 
 
 def get_entity_ids_for_org(org: Organization, db: Session) -> list[str]:
@@ -139,7 +141,7 @@ async def run_onboarding_pipeline(org_id: str) -> None:
 
         logger.info(f"Starting onboarding pipeline for {org.name}")
 
-        _clear_previous_data(org_id, db)
+        _clear_previous_data(org, db)
 
         # Step 0: Find org logo
         if not org.logo_url:
@@ -267,7 +269,7 @@ async def collect_one_day(
     date_str = str(query_date.date())
 
     existing_titles: set[str] = {
-        row.title for row in db.query(DarkWebItem.title).all() if row.title
+        row.title for row in db.query(DarkWebItem.title).filter_by(session_id=org.session_id).all() if row.title
     }
 
     dw_total = 0
@@ -286,6 +288,7 @@ async def collect_one_day(
             if rf_item["title"] in existing_titles:
                 continue
             item = DarkWebItem(
+                session_id=org.session_id,
                 source=rf_item["source"],
                 title=rf_item["title"],
                 content=rf_item["content"],
@@ -317,6 +320,7 @@ async def collect_one_day(
             if rf_item["title"] in existing_titles:
                 continue
             item = DarkWebItem(
+                session_id=org.session_id,
                 source=rf_item["source"],
                 title=rf_item["title"],
                 content=rf_item["content"],

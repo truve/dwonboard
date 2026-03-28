@@ -138,8 +138,7 @@ async def generate_alerts_for_org(
 
     entries = db.query(ProfileEntry).filter_by(profile_id=profile.id).all()
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.DARKWEB_LOOKBACK_DAYS)
-    darkweb_items = db.query(DarkWebItem).filter(DarkWebItem.posted_at >= cutoff).all()
+    darkweb_items = db.query(DarkWebItem).filter_by(session_id=org.session_id).all()
 
     if not darkweb_items:
         logger.info("No dark web items in lookback window")
@@ -243,6 +242,7 @@ Content: {item.content}
 
     alert = Alert(
         org_id=org.id,
+        session_id=org.session_id,
         darkweb_item_id=item.id,
         title=result["title"],
         description=result["description"],

@@ -179,6 +179,11 @@ export const api = {
     request<{ status: string }>(`/organizations/${orgId}/analyze`, {
       method: "POST",
     }),
+
+  skipAnalysis: (orgId: string) =>
+    request<{ status: string }>(`/organizations/${orgId}/skip-analysis`, {
+      method: "POST",
+    }),
 };
 
 export interface CollectDayResult {

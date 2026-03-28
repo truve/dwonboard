@@ -109,11 +109,14 @@ async def collect_day(
     org = db.query(Organization).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    if org.status not in ("collecting", "alerting"):
+    if org.status not in ("collecting", "alerting", "onboarded"):
         raise HTTPException(
             status_code=400,
             detail=f"Organization is in '{org.status}' state, expected 'collecting'",
         )
+    if org.status == "onboarded":
+        # Silently return empty result if skipped
+        return {"date": "", "darkweb_total": 0, "darkweb_fetched": 0, "cyber_risk_total": 0, "cyber_risk_fetched": 0, "samples": []}
 
     result = await collect_one_day(org_id, days_back, db)
     return result
@@ -135,6 +138,23 @@ async def analyze(
 
     background_tasks.add_task(run_analysis, org_id)
     return {"status": "analyzing"}
+
+
+@router.post("/organizations/{org_id}/skip-analysis")
+def skip_analysis(
+    org_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Skip the analysis phase and go directly to onboarded."""
+    org = db.query(Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org.status = "onboarded"
+    org.analysis_progress = None
+    org.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"status": "onboarded"}
 
 
 @router.get("/organizations/{org_id}/logo")

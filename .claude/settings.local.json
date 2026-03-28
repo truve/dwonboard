@@ -7,7 +7,8 @@
       "Bash(npx tsc:*)",
       "Bash(source /Users/truve/dev/claude/onboard/.venv/bin/activate)",
       "Bash(python -c \"from app.main import app; print\\(''Backend OK''\\)\")",
-      "Bash(python -c \"from app.main import app; print\\(''OK''\\)\")"
+      "Bash(python -c \"from app.main import app; print\\(''OK''\\)\")",
+      "Bash(createdb onboard:*)"
     ]
   }
 }

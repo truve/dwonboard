@@ -36,7 +36,7 @@ const STATUS_LABELS: Record<string, { label: string; description: string }> = {
   analyzing: {
     label: "Analyzing Threats",
     description:
-      "Matching collected data against your profile using vector similarity and AI classification. Generating risk assessment.",
+      "Classifying collected data against your profile using AI. Generating risk assessment.",
   },
   onboarded: {
     label: "Onboarding Complete",
@@ -77,6 +77,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [currentSnippet, setCurrentSnippet] = useState<string | null>(null);
   const [daysCollected, setDaysCollected] = useState(0);
   const collectingRef = useRef(false);
+  const skippedRef = useRef(false);
 
   // Poll status for phases the backend controls (profiling, analyzing)
   const pollStatus = useCallback(async () => {
@@ -122,8 +123,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
     const stats: DailyIngestionStats[] = [];
 
     for (let daysBack = 0; daysBack <= LOOKBACK_DAYS; daysBack++) {
+      if (skippedRef.current) return;
       try {
         const result: CollectDayResult = await api.collectDay(orgId, daysBack);
+        if (skippedRef.current) return;
 
         stats.push({
           date: result.date,
@@ -135,20 +138,21 @@ export default function OnboardingWizard({ onComplete }: Props) {
         setDailyStats([...stats]);
         setDaysCollected(daysBack + 1);
 
-        // Show a sample snippet from this day's results
         if (result.samples.length > 0) {
           const sample = result.samples[0];
           setCurrentSnippet(sample.title || sample.snippet);
         }
       } catch (e) {
+        if (skippedRef.current) return;
         console.error(`Collection failed for day ${daysBack}:`, e);
       }
     }
 
+    if (skippedRef.current) return;
+
     // Collection done — trigger analysis
     try {
       await api.analyze(orgId);
-      // Status will transition to "analyzing", polling will pick it up
     } catch (e) {
       console.error("Failed to trigger analysis:", e);
     }
@@ -472,12 +476,30 @@ export default function OnboardingWizard({ onComplete }: Props) {
           })}
         </div>
 
-        {/* Timer */}
+        {/* Timer + Skip button */}
         {status?.elapsed_seconds != null && effectiveStatus !== "onboarded" && (
-          <div className="mt-6 pt-4 border-t border-gray-800 text-center">
+          <div className="mt-6 pt-4 border-t border-gray-800 flex items-center justify-between">
             <span className="text-sm text-gray-500">
               Elapsed: {Math.floor(status.elapsed_seconds)}s
             </span>
+            {(effectiveStatus === "analyzing" || effectiveStatus === "collecting") && org && (
+              <button
+                onClick={async () => {
+                  skippedRef.current = true;
+                  try {
+                    await api.skipAnalysis(org.id);
+                    const updated = await api.getOrg(org.id);
+                    onComplete(updated);
+                  } catch (e) {
+                    console.error("Skip failed:", e);
+                    skippedRef.current = false;
+                  }
+                }}
+                className="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded transition-colors"
+              >
+                Skip to Dashboard
+              </button>
+            )}
           </div>
         )}
       </div>

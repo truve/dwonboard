@@ -1,10 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException as _HTTPException
 from app.database import get_db
 from app.models.alert import Alert
 from app.models.darkweb_item import DarkWebItem
+from app.models.organization import Organization
 from app.schemas.alert import AlertList, AlertOut, AlertUpdate
+
+
+def _get_session_id(org_id: str, db: Session) -> str:
+    org = db.query(Organization).filter_by(id=org_id).first()
+    if not org:
+        raise _HTTPException(status_code=404, detail="Organization not found")
+    return org.session_id
 
 router = APIRouter()
 
@@ -30,7 +39,8 @@ def list_alerts(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ) -> AlertList:
-    query = db.query(Alert).filter_by(org_id=org_id)
+    session_id = _get_session_id(org_id, db)
+    query = db.query(Alert).filter_by(org_id=org_id, session_id=session_id)
 
     if severity:
         query = query.filter_by(severity=severity)

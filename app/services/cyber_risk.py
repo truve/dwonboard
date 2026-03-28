@@ -48,11 +48,10 @@ async def generate_cyber_risk_summary(org_id: str, db: Session) -> str:
     profile = db.query(OrgProfile).filter_by(org_id=org_id).first()
     profile_summary = profile.summary if profile else f"Organization: {org.name}"
 
-    # Get recent dark web / OSINT items
-    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    # Get dark web / OSINT items for this session
     items = (
         db.query(DarkWebItem)
-        .filter(DarkWebItem.posted_at >= cutoff)
+        .filter_by(session_id=org.session_id)
         .order_by(DarkWebItem.posted_at.desc())
         .limit(100)
         .all()
