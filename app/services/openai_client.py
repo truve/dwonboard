@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 
@@ -40,6 +41,8 @@ async def chat_completion(
 
             response = await client.chat.completions.create(**kwargs)
             choice = response.choices[0]
+            content = choice.message.content or ""
+
             if choice.finish_reason == "length":
                 logger.warning(
                     f"Response truncated (finish_reason=length, max_tokens={max_tokens}), "
@@ -47,7 +50,20 @@ async def chat_completion(
                 )
                 max_tokens = min(max_tokens * 2, 65536)
                 continue
-            return choice.message.content or ""
+
+            # Validate JSON if structured output was requested
+            if response_format is not None and content:
+                try:
+                    json.loads(content)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"Invalid JSON returned (finish_reason={choice.finish_reason}, "
+                        f"len={len(content)}), retrying with doubled max_tokens"
+                    )
+                    max_tokens = min(max_tokens * 2, 65536)
+                    continue
+
+            return content
         except ValueError:
             raise  # Don't retry on value errors
         except Exception as e:

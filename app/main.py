@@ -2,13 +2,14 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
 from app.routers import alerts, auth, darkweb, organizations, profiles
+from app.routers.auth import require_auth
 
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
 
@@ -33,11 +34,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth routes are public (login, check)
 app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
-app.include_router(organizations.router, prefix="/api/v1", tags=["organizations"])
-app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"])
-app.include_router(alerts.router, prefix="/api/v1", tags=["alerts"])
-app.include_router(darkweb.router, prefix="/api/v1", tags=["darkweb"])
+# All other routes require authentication
+app.include_router(organizations.router, prefix="/api/v1", tags=["organizations"], dependencies=[Depends(require_auth)])
+app.include_router(profiles.router, prefix="/api/v1", tags=["profiles"], dependencies=[Depends(require_auth)])
+app.include_router(alerts.router, prefix="/api/v1", tags=["alerts"], dependencies=[Depends(require_auth)])
+app.include_router(darkweb.router, prefix="/api/v1", tags=["darkweb"], dependencies=[Depends(require_auth)])
 
 # Serve frontend static files in production
 _frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
